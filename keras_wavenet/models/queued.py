@@ -1,5 +1,3 @@
-import keras
-from keras.models import Model
 import h5py
 import json
 from keras.engine.saving import model_from_config,preprocess_weights_for_loading
