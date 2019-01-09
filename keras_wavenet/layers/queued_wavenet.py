@@ -2,6 +2,7 @@ import keras
 import keras.backend as K
 from keras.layers import (Conv1D)
 import tensorflow as tf
+
 class QueuedConv1D(Conv1D):
     '''For each step in the filter, create a queue of length equal to the dilation rate
         need to add updates somewhere
@@ -42,7 +43,7 @@ class QueuedConv1D(Conv1D):
             self.push_list.append(push)
             
         self.add_update(self.push_list)
-        self.reset_states()
+        self.initialize_queues()
         
         output = 0
         for filter_step in range(kernel_size):
@@ -61,11 +62,15 @@ class QueuedConv1D(Conv1D):
         sess = K.get_session()
         dequeues = []
         for q in self.queue_list:
-            q_size = q.size().eval(session=sess)
-            deq = q.dequeue_many(q_size)
+            deq = q.dequeue_many(q.size())
             dequeues.append(deq)
-        sess.run(self.init_list+dequeues)
-
+        sess.run(dequeues)
+        sess.run(self.init_list)
+                
+    def initialize_queues(self):
+        sess = K.get_session()
+        sess.run(self.init_list)
+        
     def compute_output_shape(self,input_shape):
         x_batch,x_timesteps,n_ch = input_shape
         return (x_batch,x_timesteps,self.filters)

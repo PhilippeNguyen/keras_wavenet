@@ -9,7 +9,7 @@ import numpy as np
 ##############
 ### Layers ###
 ##############
-
+    
 class TemporalShift(Layer):
     """ shift a temporal tensor (n_batch,time,channels)
         
@@ -21,17 +21,49 @@ class TemporalShift(Layer):
     def __init__(self,shift,**kwargs):
         super(TemporalShift,self).__init__(**kwargs)
         self.shift = shift
-        self.padding = (np.maximum(shift,0),-np.minimum(shift,0))
+        
         
     def call(self,x):
         x_shape = x._keras_shape
         assert len(x_shape) == 3, "TemporalShift input must be dim 3"
+        self.padding = (K.maximum(self.shift,0),-K.minimum(self.shift,0))
         x = K.temporal_padding(x, padding=self.padding)
         return x[:,:x_shape[1]]
         
     def get_config(self):
         config = {'shift':self.shift}
         base_config = super(TemporalShift, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+class RandomTemporalShift(Layer):
+    """ shift a temporal tensor (n_batch,time,channels)
+        
+        Args:
+            shift: int, number of timesteps to shift, adds zeros to the front if postivem
+                removes indices from the front if negative.
+    """
+    
+    def __init__(self,mu=0,sigma=1,max_shift=3,**kwargs):
+        super(RandomTemporalShift,self).__init__(**kwargs)
+        self.mu = mu
+        self.sigma = sigma
+        self.max_shift = max_shift
+        
+    def call(self,x):
+        x_shape = x._keras_shape
+        assert len(x_shape) == 3, "TemporalShift input must be dim 3"
+
+        rand_shift = K.cast(K.exp(K.random_normal(
+                                        shape=(1,),mean=self.mu,stddev=self.sigma)),
+                     'int32')[0]
+        rand_shift = K.minimum(rand_shift,self.max_shift)
+        self.padding = (K.maximum(rand_shift,0),-K.minimum(rand_shift,0))
+        x = K.temporal_padding(x, padding=self.padding)
+        return x[:,:x_shape[1]]
+        
+    def get_config(self):
+        config = {'mu':self.mu,'sigma':self.sigma,'max_shift':self.max_shift}
+        base_config = super(RandomTemporalShift, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
 class WavenetActivation(Layer):
@@ -56,6 +88,8 @@ class WavenetActivation(Layer):
         return (n_b,n_time,half_ch)
     
 class RepeatElements(Layer):
+    '''Repeats elements along some axis. Not used, just use Lambda layer instead
+    '''
     def __init__(self,num_repeats,axis,**kwargs):
         super(TemporalShift,self).__init__()
         self.num_repeats = num_repeats
@@ -78,7 +112,15 @@ class RepeatElements(Layer):
 
 class AddEncoder(Layer):
     '''Adds the encoder to the signal,
-        function call AddEncoder()([signal,encoding])
+        function call AddEncoder()([signal,encoding])/
+        
+        signal: tensor, shape (num_batches,num_signal_timesteps,num_signal_channels)
+        encoding: tensor, shape (num_batches,num_encoding_timesteps,num_encoding_channels)
+        
+        num_signal_timesteps must be a multiple of num_encoding_timesteps,
+        
+        This layer will stretch the encoding timesteps so that it matches the signal timesteps
+        then adds the two together.
     '''
     def __init__(self,**kwargs):
         super(AddEncoder,self).__init__(**kwargs)
@@ -108,6 +150,7 @@ class AddEncoder(Layer):
         return added
     
     def compute_output_shape(self,input_shape):
+        assert len(input_shape) == 2
         return input_shape[0]
     
     def _fix_unknown_dimension(self, input_shape, output_shape):

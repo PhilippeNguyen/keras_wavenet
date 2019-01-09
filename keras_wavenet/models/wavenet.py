@@ -1,14 +1,30 @@
+
 from keras.layers import (Reshape,Add,Conv1D,SeparableConv1D,
                           Activation,GlobalMaxPool1D,MaxPool1D,Flatten,Lambda)
-from ..layers.core import WavenetActivation,AddEncoder,TemporalShift
+from layers.wavenet import WavenetActivation,AddEncoder,TemporalShift
 
 ##############
 ### Blocks ###
 ##############
 
 def res_block(sig,width,filt_len,dilation,base_name,
-              encoding=None,conv_type='conv1d',separate_skip=True,
+              encoding=None,separate_skip=True,
               skip_width=None):
+    '''Encompasses the core building block of the wavenet model, see figure 4 
+    of the wavenet paper (https://arxiv.org/pdf/1609.03499.pdf)
+    
+        Args:
+            sig: tensor, signal tensor,
+            width: int, number of filters/units used in conv operations
+            filter_len: int, length of the conv operatations
+            dilation: int, dilation rate used in conv
+            base_name: name for the keras layers/tensors
+            encoding: tensor, encoding tensor,
+            separate_skip: bool, whether to have the skip output be separate 
+                from the main channel output
+            skip_width: int, number of filters/units used in the skip output 
+                (output of each residual block)
+    '''
     
     if skip_width == None:
         skip_width = width
@@ -46,11 +62,19 @@ def res_block(sig,width,filt_len,dilation,base_name,
 ### Models ###
 ##############
     
-def build_wavenet_encoder(stft_input,width,filter_len,num_layers,num_stages,
-                          pool_size=None
+def build_wavenet_encoder(input_tensor,width,filter_len,
+                          num_layers,num_stages
                           ):
-    
-    en = Conv1D(filters=width,kernel_size=filter_len,padding='same')(stft_input)
+    '''
+        Args:
+            input_tensor: tensor input, shape (num_batches,num_timesteps,num_channels)
+            width: int, number of filters/units used in conv operations
+            filter_len: int, length of the conv operatations
+            num_layers: int, number of conv stages, each one doubles the dilation rate
+            num_stages: int, after every num_stages, reset the dilation rate,
+        
+    '''
+    en = Conv1D(filters=width,kernel_size=filter_len,padding='same')(input_tensor)
     
     for num_layer in range(num_layers):
         dilation = 2**(num_layer % num_stages)
@@ -67,10 +91,25 @@ def build_wavenet_encoder(stft_input,width,filter_len,num_layers,num_stages,
     return en
 
 def build_wavenet_decoder(encoding,signal,
-                          width,skip_width,out_filters,
+                          width,skip_width,out_width,
                           num_layers,num_stages,
-                          filt_len=3,final_conditioning=False):
-    sig_shift = TemporalShift(shift=1)(signal)
+                          filt_len=3,final_conditioning=False,
+                          final_activation='softmax'):
+    '''
+        Args:
+            encoding: tensor input, shape (num_batches,num_encoding_timesteps,num_channels)
+            signal: tensor, should be the same as the encoding model input, shape (num_batches,num_timesteps,num_channels)
+            width: int, number of filters/units used in the main channel
+            skip_width: int, number of filters/units used in the skip output 
+            out_width: int, number of filters/units for the final output of the decoder
+            filter_len: int, length of the conv operatations
+            num_layers: int, number of conv stages, each one doubles the dilation rate
+            num_stages: int, after every num_stages, reset the dilation rate,
+            final_conditioning: bool, if true conditions the output of the res blocks
+            final_activation : str, name of the final activation function
+    '''
+    
+    sig_shift = TemporalShift(shift=1,name='temporal_shift')(signal)
     _,sig_len,_ = signal._keras_shape
     
     sig = Conv1D(filters=width,
@@ -103,15 +142,17 @@ def build_wavenet_decoder(encoding,signal,
                        padding='causal',
                        name="conv_encoding")(encoding)
         skip_conditioned = AddEncoder()([skip_conv,conv_encoding])
-        skip_cond_conv = Conv1D(filters=out_filters,
+        skip_conditioned = Activation('relu')(skip_conditioned)
+        skip_out = Conv1D(filters=out_width,
                        kernel_size=1,
                        padding='causal',
-                       name="skip_cond_conv")(skip_conditioned)
-        return skip_cond_conv
+                       name="decoder_out_pre_act")(skip_conditioned)
     else:
-        skip_conv = Conv1D(filters=out_filters,
+        skip_out = Conv1D(filters=out_width,
                kernel_size=1,
                padding='causal',
-               name="skip_conv")(skip_add)
-        return skip_conv
-    
+               name="decoder_out_pre_act")(skip_add)
+    decoder_out = Activation(final_activation,name=
+                         'decoder_out')(skip_out)
+    return decoder_out
+

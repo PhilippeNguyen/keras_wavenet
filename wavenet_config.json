@@ -1,0 +1,29 @@
+{
+    "generator_dict": {
+        "target_size": [
+            6000,
+            1
+        ],
+        "expand_dim": 1,
+        "abs_one_rescale": true,
+        "sample_to_categorical": false,
+        "mu_law": true,
+        "load_kwargs": {
+            "sample_rate": 20000,
+            "num_channels": 1
+        },
+        "load_method": "scipy",
+        "expected_len": 6000
+    },
+    "model_dict": {
+        "enc_width": 128,
+        "dec_width": 128,
+        "dec_skip_width": 100,
+        "enc_pool_size": 1000,
+        "latent_size": 32,
+        "final_conditioning": true,
+        "num_dec_layers": 30,
+        "num_dec_stages": 10,
+        "final_activation": "softmax"
+    }
+}
