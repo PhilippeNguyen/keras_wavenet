@@ -1,7 +1,7 @@
 
 from keras.layers import (Reshape,Add,Conv1D,SeparableConv1D,
                           Activation,GlobalMaxPool1D,MaxPool1D,Flatten,Lambda)
-from layers.wavenet import WavenetActivation,AddEncoder,TemporalShift
+from keras_wavenet.layers.wavenet import WavenetActivation,AddEncoder,TemporalShift
 
 ##############
 ### Blocks ###
@@ -90,11 +90,12 @@ def build_wavenet_encoder(input_tensor,width,filter_len,
 
     return en
 
-def build_wavenet_decoder(encoding,signal,
+def build_wavenet_decoder(signal,encoding,
                           width,skip_width,out_width,
                           num_layers,num_stages,
                           filt_len=3,final_conditioning=False,
-                          final_activation='softmax'):
+                          final_activation='softmax',
+                          base_name=""):
     '''
         Args:
             encoding: tensor input, shape (num_batches,num_encoding_timesteps,num_channels)
@@ -109,25 +110,25 @@ def build_wavenet_decoder(encoding,signal,
             final_activation : str, name of the final activation function
     '''
     
-    sig_shift = TemporalShift(shift=1,name='temporal_shift')(signal)
+    sig_shift = TemporalShift(shift=1,name=base_name+'temporal_shift')(signal)
     _,sig_len,_ = signal._keras_shape
     
     sig = Conv1D(filters=width,
                    kernel_size=filt_len,
                    padding='causal',
-                   name="convstart")(sig_shift)
+                   name=base_name+"convstart")(sig_shift)
     skip = Conv1D(filters=skip_width,
                    kernel_size=filt_len,
                    padding='causal',
-                   name="skipstart_conv")(sig_shift)
+                   name=base_name+"skipstart_conv")(sig_shift)
     skip_list = [skip]
     for idx in range(num_layers):
         dilation = 2**(idx % num_stages)
         sig,new_skip = res_block(sig,width,filt_len,dilation=dilation,
                                  skip_width=skip_width,
-                                 base_name='res_block'+str(idx)+'_dil'+str(dilation),
+                                 base_name=base_name+'res_block'+str(idx)+'_dil'+str(dilation),
                                  encoding=encoding,
-                                 conv_type='conv1d')
+                                 )
         skip_list.append(new_skip)
     skip_add = Add()(skip_list)
     skip_add = Activation('relu')(skip_add)
@@ -136,23 +137,23 @@ def build_wavenet_decoder(encoding,signal,
         skip_conv = Conv1D(filters=width,
                kernel_size=1,
                padding='causal',
-               name="skip_conv")(skip_add)
+               name=base_name+"skip_conv")(skip_add)
         conv_encoding = Conv1D(filters=width,
                        kernel_size=1,
                        padding='causal',
-                       name="conv_encoding")(encoding)
+                       name=base_name+"conv_encoding")(encoding)
         skip_conditioned = AddEncoder()([skip_conv,conv_encoding])
         skip_conditioned = Activation('relu')(skip_conditioned)
         skip_out = Conv1D(filters=out_width,
                        kernel_size=1,
                        padding='causal',
-                       name="decoder_out_pre_act")(skip_conditioned)
+                       name=base_name+"decoder_out_pre_act")(skip_conditioned)
     else:
         skip_out = Conv1D(filters=out_width,
                kernel_size=1,
                padding='causal',
-               name="decoder_out_pre_act")(skip_add)
+               name=base_name+"decoder_out_pre_act")(skip_add)
     decoder_out = Activation(final_activation,name=
-                         'decoder_out')(skip_out)
+                         base_name+'decoder_out')(skip_out)
     return decoder_out
 

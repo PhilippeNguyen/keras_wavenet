@@ -9,27 +9,27 @@ import sys
 import warnings
 from .wavenet_utils import inv_mu_law_numpy
 
-def model_output_transform(model_output,mode,axis=-1):
-    if mode not in ('sampling','maximum','no_transform'):
-        raise ValueError("synthesize mode not understood")
-    
-    if mode == 'no_transform':
-        return model_output
-    elif mode == 'sampling':
-        batch_size,n_timesteps,_ = model_output.shape
-        assert n_timesteps == 1
-       
-        model_output = model_output[:,0,:]
-        cdf = np.cumsum(model_output, axis=1)
-        rand_vals = np.random.rand(batch_size)
-        idxs = np.zeros([batch_size, 1],dtype='int64')
-        for i in range(batch_size):
-            idxs[i] = cdf[i].searchsorted(rand_vals[i])
-        return np.expand_dims(idxs,-1)
-    elif mode == 'maximum':
-        maxes = np.argmax(model_output,axis=-1)
-#        np.put_along_axis(y,,1,axis=-1)
-        return np.expand_dims(maxes,-1)
+#def model_output_transform(model_output,mode,axis=-1):
+#    if mode not in ('sampling','maximum','no_transform'):
+#        raise ValueError("synthesize mode not understood")
+#    
+#    if mode == 'no_transform':
+#        return model_output
+#    elif mode == 'sampling':
+#        batch_size,n_timesteps,_ = model_output.shape
+#        assert n_timesteps == 1
+#       
+#        model_output = model_output[:,0,:]
+#        cdf = np.cumsum(model_output, axis=1)
+#        rand_vals = np.random.rand(batch_size)
+#        idxs = np.zeros([batch_size, 1],dtype='int64')
+#        for i in range(batch_size):
+#            idxs[i] = cdf[i].searchsorted(rand_vals[i])
+#        return np.expand_dims(idxs,-1)
+#    elif mode == 'maximum':
+#        maxes = np.argmax(model_output,axis=-1)
+##        np.put_along_axis(y,,1,axis=-1)
+#        return np.expand_dims(maxes,-1)
     
 def batch_model_reset_states(model):
     warnings.warn("using batch reset states method which only resets QueuedConv1D layers")
@@ -47,35 +47,35 @@ def batch_model_reset_states(model):
     sess.run(all_dequeues)
     sess.run(all_inits)
     
-def synthesize(model,encoding,num_timesteps,mode='no_transform',
-               init_state=None,verbose=False):
-        
-#    model.reset_states() #will also reset other states
-    batch_model_reset_states(model)
-
-    num_ch = 1
-    num_batch,encoding_len,_ = encoding.shape
-    full_audio = np.zeros((num_batch,num_timesteps,num_ch),dtype=np.float32)
-    
-    encoding_hop = num_timesteps // encoding_len
-    if init_state is None:
-        y = np.zeros((num_batch,1,num_ch),dtype=np.float32)
-    else:
-        y = init_state
-    for idx in range(num_timesteps):
-        if idx % 100 == 0 and verbose:
-            sys.stdout.write("\r "+str(idx)+" / " +str(num_timesteps))
-            sys.stdout.flush()
-
-        enc_idx = idx // encoding_hop
-        enc = np.expand_dims(encoding[:,enc_idx,:],axis=1)
-        model_out = model.predict([enc,y])
-
-        model_out = model_output_transform(model_out,mode)-128
-        y = model_out / 128.
-        full_audio[:,idx,:] = inv_mu_law_numpy(model_out[:,0,:])
-        
-    return full_audio
+#def synthesize(model,encoding,num_timesteps,mode='no_transform',
+#               init_state=None,verbose=False):
+#        
+##    model.reset_states() #will also reset other states
+#    batch_model_reset_states(model)
+#
+#    num_ch = 1
+#    num_batch,encoding_len,_ = encoding.shape
+#    full_audio = np.zeros((num_batch,num_timesteps,num_ch),dtype=np.float32)
+#    
+#    encoding_hop = num_timesteps // encoding_len
+#    if init_state is None:
+#        y = np.zeros((num_batch,1,num_ch),dtype=np.float32)
+#    else:
+#        y = init_state
+#    for idx in range(num_timesteps):
+#        if idx % 100 == 0 and verbose:
+#            sys.stdout.write("\r "+str(idx)+" / " +str(num_timesteps))
+#            sys.stdout.flush()
+#
+#        enc_idx = idx // encoding_hop
+#        enc = np.expand_dims(encoding[:,enc_idx,:],axis=1)
+#        model_out = model.predict([enc,y])
+#
+#        model_out = model_output_transform(model_out,mode)-128
+#        y = model_out / 128.
+#        full_audio[:,idx,:] = inv_mu_law_numpy(model_out[:,0,:])
+#        
+#    return full_audio
 
 def load_model(filepath,queued,batch_size=1,custom_objects=None,
                new_inputs=None,new_outputs=None,batch_input_shapes=None):
@@ -261,7 +261,7 @@ def _deserialize_model(f, batch_size=1,custom_objects=None,
     for name in layer_names:
         layer_weights = model_weights_group[name]
         weight_names = layer_weights['weight_names']
-        if weight_names:
+        if len(weight_names) > 0:
             filtered_layer_names.append(name)
 
     layer_names = filtered_layer_names

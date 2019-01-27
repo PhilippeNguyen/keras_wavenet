@@ -5,7 +5,7 @@ import os
 from keras.preprocessing.image import Iterator
 import librosa
 from scipy.signal import resample_poly
-from wavenet_utils import sample_to_categorical,mu_law
+from keras_wavenet.utils.wavenet_utils import sample_to_categorical,mu_law
 import random
 
 def set_channel(sequence,num_channels,single_channel_idx=0):
@@ -109,12 +109,12 @@ class WavGenerator(object):
                  load_method='librosa',
                  expand_dim=None,
                  abs_one_rescale=True,
-                 sample_to_categorical=False,
-                 mu_law=True,
+                 mu_law=False,
                  random_transforms =True,
                  max_loc=None,
                  front_padding=0.0,
-                 random_offset=False
+                 random_offset=False,
+                 uint16_rescale=False
                  
                  ):
         self.load_kwargs = load_kwargs
@@ -124,13 +124,13 @@ class WavGenerator(object):
         self.load_method = load_method
         self.expand_dim = expand_dim
         self.abs_one_rescale =abs_one_rescale
-        self.sample_to_categorical = sample_to_categorical
         self.mu_law = mu_law
         self.random_transforms=random_transforms
         self.expected_len = expected_len
         self.max_loc =max_loc
         self.front_padding = front_padding
         self.random_offset = random_offset
+        self.uint16_rescale = uint16_rescale
         
     def flow_from_directory(self,
                              directory,
@@ -174,23 +174,26 @@ class WavGenerator(object):
                 diff = -diff
                 zeros[diff:] = x[:-diff]
             x = zeros
-
+            
+        if self.expand_dim is not None:
+            x = np.expand_dims(x,axis=self.expand_dim)
+            
+        if self.expected_len is not None:
+            expected_len = int(self.expected_len)
+            x = fix_seq_len(x,expected_len)
         return x
     
     def preprocess_pipeline(self,x):
         if self.abs_one_rescale:
             x_min,x_max = (np.minimum(np.min(x),-1),np.maximum(np.max(x),1))
             x = 2*((x - x_min)/(x_max-x_min)) - 1
+        if self.uint16_rescale:
+            x_min,x_max = (np.minimum(np.min(x),-1),np.maximum(np.max(x),1))
+            x = ((x - x_min)/(x_max-x_min))*(2**16-1)
+            x = np.round(x)
         if self.mu_law:
             x = mu_law(x)
-        if self.expand_dim is not None:
-            x = np.expand_dims(x,axis=self.expand_dim)
-            
-        if self.sample_to_categorical:
-            x = sample_to_categorical(x)
-        if self.expected_len is not None:
-            expected_len = int(self.expected_len)
-            x = fix_seq_len(x,expected_len)
+
         return x
     
     def load_wavfile(self,file):
@@ -221,7 +224,7 @@ class DirectoryIterator(Iterator):
                  data_format=None,
                  follow_links=False):
         self.directory = directory
-        self.target_size = target_size
+        self.target_size = tuple(target_size)
         self.wav_data_generator = wav_data_generator
         
 

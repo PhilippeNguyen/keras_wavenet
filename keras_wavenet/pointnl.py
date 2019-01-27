@@ -1,0 +1,3 @@
+
+class PointwiseNonlinearity(object):
+    pass
