@@ -6,7 +6,7 @@ from keras_wavenet.utils.wavenet_utils import (simple_load_wavfile,
                                            sample_to_categorical,
                                            categorical_to_sample)
 from keras_wavenet.layers.wavenet import custom_objs
-from keras_wavenet.utils.queued_wavenet_utils import load_model,batch_model_reset_states,model_output_transform
+from keras_wavenet.utils.queued_wavenet_utils import load_model,batch_model_reset_states
 from keras_wavenet.utils.wavenet_utils import inv_mu_law_numpy
 from keras_wavenet.utils.audio_generator_utils import WavGenerator
 from keras_wavenet.models.audio_outputs import get_output_processor

@@ -9,6 +9,7 @@ from keras_wavenet.layers.wavenet import custom_objs
 from keras.models import load_model
 from keras_wavenet.utils.wavenet_utils import inv_mu_law_numpy
 from keras_wavenet.utils.audio_generator_utils import WavGenerator
+from keras_wavenet.models.audio_outputs import get_output_processor
 import pickle
 import numpy as np
 import sys
@@ -43,14 +44,16 @@ encoding_size = config_json['model_dict']['latent_size']
 preprocess_func_str = config_json['model_dict']['preprocess_func_str']
 used_mu_law = config_json['generator_dict']['mu_law']
 output_processor = config_json['model_dict']['output_processor']
-batch_size = 32
+output_processor_kwargs = config_json['model_dict']['output_processor_kwargs']
+
+batch_size = 8
 
 generator = WavGenerator(**config_json['generator_dict'])
 generator.random_transforms = False
 train_gen = generator.flow_from_directory(args.folder,
                                               shuffle=True,
                                               follow_links=True,
-                                              batch_size=32,
+                                              batch_size=batch_size,
                                               )
 test_x,test_y,filenames = train_gen.next(return_filenames=True)
 
@@ -62,11 +65,8 @@ model = load_model(args.model,compile=False,
 
 
 output_channels = model.output_shape[-1]
-if output_processor == 'sparse_categorical':
-    from keras_wavenet.models.audio_outputs import SparseCategorical
-    sampler = SparseCategorical(num_classes=output_channels,bias=128).sample
-elif output_processor.lower() == 'dmll_tfp':
-    from keras_wavenet.models.audio_output_tf import DMLL_tfp
-    sampler = partial(DMLL_tfp(num_classes=output_channels//3).sample,model=model)
+dist = get_output_processor(output_processor,num_output_channels=output_channels,
+                            processor_kwargs=output_processor_kwargs)
+sampler = dist.sample
 model_out = model.predict(test_x)
-out = sampler(model_out)
+out = sampler(model_out,model)

@@ -6,6 +6,9 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Dense,Input,Conv1D,Activation,Lambda
 import numpy as np
 
+#class MyQuantizedDistribution(tfd.QuantizedDistribution):
+#    def _log_prob_with_logsf_and_logcdf(self,y):
+#        raise NotImplementedError
 class DMLL_tfp(OutputProcessor):
     '''discretized mixture of logistics
     https://github.com/tensorflow/tensorflow/blob/r1.12/tensorflow/contrib/distributions/python/ops/quantized_distribution.py
@@ -20,6 +23,7 @@ class DMLL_tfp(OutputProcessor):
         super(DMLL_tfp,self).__init__(**kwargs)
         self.num_classes = num_classes
         self.built=False
+        print(low,high)
         self.low = low
         self.high = high
         self.mean_scale = mean_scale
@@ -59,16 +63,17 @@ class DMLL_tfp(OutputProcessor):
         assert model_output.get_shape().as_list()[-1] % self.num_classes == 0
         logit_probs = model_output[...,:self.num_classes]
         means = model_output[...,self.num_classes:2*self.num_classes]
-        scale_params = model_output[...,2*self.num_classes:]
+        scale_params = model_output[...,2*self.num_classes:] #should be log scales
         
         means = means*self.mean_scale
-        
+        means = K.minimum(K.maximum(means,self.low),self.high)
         log_scales = K.minimum(K.maximum(scale_params* self.scale_scale,
                                          self.log_scale_min),
                             self.log_scale_max)
         scales = K.exp(log_scales) 
 
         discretized_logistic_dist = tfd.QuantizedDistribution(
+#        discretized_logistic_dist = MyQuantizedDistribution(
                 distribution=tfd.TransformedDistribution(
                     distribution=tfd.Logistic(loc=means, scale=scales),
                     bijector=tfb.AffineScalar(shift=-0.5)),
@@ -87,7 +92,7 @@ class SparseCategorical_tfp(OutputProcessor):
                      bias,
                      mode='logits',
                  **kwargs):
-        super(DMLL_tfp,self).__init__(**kwargs)
+        super(SparseCategorical_tfp,self).__init__(**kwargs)
         self.num_classes = num_classes
         self.built=False
         self.bias = bias

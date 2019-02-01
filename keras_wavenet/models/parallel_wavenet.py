@@ -8,7 +8,7 @@ import keras
 def wavenet_iaf_step(signal,encoding,
                      width,skip_width,out_width,
                      num_layers,num_stages,
-                     filt_len=3,
+                     filt_len=3,log_scale_min=-5.0,log_scale_max=5.0,
                      base_name=""):
     #NOTE: the parallel wavenet says to remove skip connections...
     dec_out = build_wavenet_decoder(signal,encoding,
@@ -22,11 +22,13 @@ def wavenet_iaf_step(signal,encoding,
     shift = Conv1D(filters=1,
        kernel_size=1,
        name=base_name+'_iaf_shift')(dec_out)
-    log_scale_unclipped = Conv1D(filters=1,
-       kernel_size=1,
-       name=base_name+'_iaf_logscale_unclipped')(dec_out)
-    log_scale = Lambda(lambda x : K.minimum(K.maximum(x,-7.0),7.0),
-                       name=base_name+'_iaf_logscale')(log_scale_unclipped)
+    log_scale_pre_sig = Conv1D(filters=1,
+            kernel_size=1,
+            name=base_name+'_iaf_logscale_pre_sig')(dec_out)
+    log_scale_sig = Activation('sigmoid',name=base_name+'_iaf_logscale_sig')(log_scale_pre_sig)
+    log_range = log_scale_max-log_scale_min
+    log_scale = Lambda(lambda x : (log_range)*x + log_scale_min,
+                       name=base_name+'_iaf_logscale')(log_scale_sig)
     scale = Activation('exponential',name=base_name+'_iaf_scale')(log_scale)
     new_x = keras.layers.Multiply()([signal,scale])
     new_x = keras.layers.Add()([new_x,shift])
