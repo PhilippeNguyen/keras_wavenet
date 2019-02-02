@@ -1,3 +1,6 @@
+from tensorflow.python.debug.lib.debug_data import InconvertibleTensorProto
+from tensorflow.python import debug as tf_debug
+
 import tensorflow as tf
 import keras
 import argparse
@@ -25,8 +28,26 @@ import os
 import json
 from inspect import signature,Parameter
 import tensorflow_probability as tfp
+from distutils.util import strtobool
 fs = os.path.sep
 
+def my_filter(datum, tensor):
+  """Only checks for nan vals
+  """
+
+  _ = datum  # Datum metadata is unused in this predicate.
+
+  if isinstance(tensor, InconvertibleTensorProto):
+    # Uninitialized tensor doesn't have bad numerical values.
+    # Also return False for data types that cannot be represented as numpy
+    # arrays.
+    return False
+  elif (np.issubdtype(tensor.dtype, np.floating) or
+        np.issubdtype(tensor.dtype, np.complex) or
+        np.issubdtype(tensor.dtype, np.integer)):
+    return  np.any(np.isnan(tensor)) and len(tensor) == 8
+  else:
+    return False
 
 def get_default_args(func):
     sig = signature(func)
@@ -148,8 +169,15 @@ parser.add_argument('--save_path', dest='save_path',
 parser.add_argument('--config_json', dest='config_json',
             action='store', default=None,
             help='Path to the student config json')
+parser.add_argument('--debug', dest='debug',
+            action='store', default=False,type=strtobool,
+            help='if true call tf_debug')
 args = parser.parse_args()
 
+if args.debug:
+    sess = tf_debug.LocalCLIDebugWrapperSession(tf.Session())
+    sess.add_tensor_filter('my_filter', my_filter)
+    K.set_session(sess)
 '''Defaults
 '''
 model_dict = get_default_args(build_parallel_wavenet)
@@ -213,6 +241,7 @@ model.compile(optimizer=AdamWithWeightnorm(),
           loss=model_loss)
 
 #sys.exit()
+
 
 early_stop=keras.callbacks.EarlyStopping(monitor='val_loss',
                                         patience=patience,
