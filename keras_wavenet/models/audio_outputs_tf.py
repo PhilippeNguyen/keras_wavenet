@@ -45,7 +45,16 @@ class DMLL_tfp(OutputProcessor):
         
         y_true = y_true[...,0]
         if fix_y_true:
-            y_true = K.minimum(K.maximum(y_true,self.low),self.high)
+#            y_true = K.minimum(K.maximum(y_true,self.low),self.high)
+
+            ones = tf.ones_like(y_true)
+            y_true = tf.where(y_true < self.low, 
+                        self.low * ones, 
+                        y_true)
+    
+            y_true = tf.where(y_true >self.high,
+                                    self.high * ones,
+                                    y_true) 
         
         neg_log_likelihood = -K.sum(self.dist.log_prob(y_true),axis=-1)
         return neg_log_likelihood
@@ -73,7 +82,6 @@ class DMLL_tfp(OutputProcessor):
         scales = K.exp(log_scales) 
 
         discretized_logistic_dist = tfd.QuantizedDistribution(
-#        discretized_logistic_dist = MyQuantizedDistribution(
                 distribution=tfd.TransformedDistribution(
                     distribution=tfd.Logistic(loc=means, scale=scales),
                     bijector=tfb.AffineScalar(shift=-0.5)),

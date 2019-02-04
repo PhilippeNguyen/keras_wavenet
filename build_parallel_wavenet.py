@@ -43,26 +43,57 @@ def my_filter(datum, tensor):
     # arrays.
     return False
   elif (np.issubdtype(tensor.dtype, np.floating) or
-        np.issubdtype(tensor.dtype, np.complex) or
+#        np.issubdtype(tensor.dtype, np.complex) or
         np.issubdtype(tensor.dtype, np.integer)):
     return  np.any(np.isnan(tensor)) and len(tensor) == 8
   else:
     return False
+
+class TrainSequence(keras.utils.Sequence):
+
+    def __init__(self, x_set, y_set, batch_size):
+        self.x, self.y = x_set, y_set
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return int(np.ceil(len(self.x) / float(self.batch_size)))
+
+    def __getitem__(self, idx):
+        batch_x = self.x[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
+
+        return batch_x,batch_y
 
 def get_default_args(func):
     sig = signature(func)
     return {k: v.default
             for k, v in sig.parameters.items()
             if v.default is not Parameter.empty }
+    
+def bound_tensor(tensor,low=None,high=None):
+#    tensor = tf.ceil(tensor)
+#    ones = tf.ones_like(tensor)
+#    if low is not None:
+#        tensor = tf.where(tensor < low, 
+#                                low * ones, 
+#                                tensor)
+#    
+#    if high is not None:
+#        tensor = tf.where(tensor > high,
+#                                high * ones,
+#                                tensor) 
+    return tensor
 
 def build_parallel_wavenet(signal_shape,encoding_shape,
                            teacher_path,teacher_processor,teacher_processor_kwargs,
+                           stft_scale,
                            width=64,skip_width=64,out_width=64,
                            layer_list=None,num_stages=10,
                            teacher_preprocess_func_str=None,
-                           num_student_samples=25,
+                           num_student_samples=50,
                            log_scale_min=-5.0,log_scale_max=5.0,
-                           stft_scale=1,
+                           quantize_output=True,
+                           power_loss_scale=1,
                            ):
     #teacher set up (do this first in order to avoid possible name conflicts)
     teacher_model = q_load_model(teacher_path,queued=False,custom_objects=custom_objs,
@@ -103,28 +134,35 @@ def build_parallel_wavenet(signal_shape,encoding_shape,
         scale_total *= scale
         log_scale_total +=log_scale
         
-    student_output = x
+#    student_output = Lambda(lambda x : tf.floor(x))(x)
+    student_output =x
     student_model = keras.models.Model([signal_layer,encoding_input],student_output)
     
     
 
     
     def model_loss(avg_power, model_output):
-        #power loss
-#        model_output_scaled = model_output/(stft_scale)
-#        model_stft = tf.contrib.signal.stft(model_output_scaled[...,0],
-#                                 frame_length=1024,
-#                                 frame_step=256)
-#        model_avg_pow = tf.reduce_mean(tf.pow(tf.abs(model_stft),2),axis=1)
-#        model_avg_pow = tf.expand_dims(model_avg_pow,axis=-1) #just to make keras happy
-#        power_loss = tf.reduce_sum(tf.square(avg_power-model_avg_pow),axis=(1,2))
-        #teacher model
+        
         
         iaf_dist = tfp.distributions.Logistic(loc=shift_total,scale=scale_total)
         
         transformed_sample = iaf_dist.sample(num_student_samples)
         transformed_sample = tf.reshape(transformed_sample,
                                         shape=[num_student_samples*nbatches,sig_len,1])
+        
+        if quantize_output:
+            transformed_sample = tf.ceil(transformed_sample-0.5)
+        
+        #power loss
+        model_output_scaled = model_output/(stft_scale)
+        model_stft = tf.contrib.signal.stft(model_output_scaled[...,0],
+                                 frame_length=1024,
+                                 frame_step=256)
+        model_avg_pow = tf.reduce_mean(tf.pow(tf.abs(model_stft),2),axis=1)
+        model_avg_pow = tf.expand_dims(model_avg_pow,axis=-1) #just to make keras happy
+        power_loss = tf.reduce_sum(tf.square(avg_power-model_avg_pow),axis=(1,2))
+        
+        #teacher model
         
         preproc_student_output = teacher_preprocessor(model_output)
 
@@ -143,7 +181,8 @@ def build_parallel_wavenet(signal_shape,encoding_shape,
                                      shape=[num_student_samples,nbatches])
         avg_teacher_log_prob = tf.reduce_mean(teacher_logprob,axis=0)
 
-        return K.mean(-student_entropy+avg_teacher_log_prob)
+#        return K.mean(-student_entropy+avg_teacher_log_prob)
+        return K.mean(power_loss_scale*power_loss-student_entropy+avg_teacher_log_prob)
     
     return student_model,model_loss
 
@@ -194,10 +233,7 @@ with open(args.teacher_config_json,'r') as f:
     teacher_config = json.load(f)
 teacher_generator_config = teacher_config['generator_dict']
 teacher_model_config = teacher_config['model_dict']
-if teacher_generator_config['mu_law']:
-    model_dict['stft_scale'] = 128
-else:
-    model_dict['stft_scale'] = 1
+
 
 model_dict['teacher_path'] = args.teacher_model
 model_dict['teacher_processor'] = teacher_model_config['output_processor']
@@ -223,14 +259,24 @@ test_rem = (len(test_encodings)%batch_size)
 if test_rem !=0:
     test_encodings = test_encodings[:-test_rem]
     test_powers = test_powers[:-test_rem]
+    
+assert test_data['stft_scale'] == train_data['stft_scale']
+model_dict['stft_scale']=train_data['stft_scale']
 
 #need to set ndim of powers to 3 to make keras happy
 train_powers = np.expand_dims(train_powers,axis=-1)
 test_powers = np.expand_dims(test_powers,axis=-1)
-    
+
 model_dict['encoding_shape'] = [batch_size,train_encodings.shape[1],train_encodings.shape[2]]
-#Model set up
+
+
+train_seq = TrainSequence(train_encodings,train_powers,batch_size=batch_size)
+test_seq = TrainSequence(test_encodings,test_powers,batch_size=batch_size)
 #sys.exit()
+
+
+
+#Model set up
 print('model setup')
 model,model_loss = build_parallel_wavenet(**model_dict
                              )
@@ -241,22 +287,31 @@ model.compile(optimizer=AdamWithWeightnorm(),
           loss=model_loss)
 
 #sys.exit()
-
-
+####=Normal Training
+csv_log = keras.callbacks.CSVLogger(args.save_path+'.csv')
+lr_plateau = keras.callbacks.ReduceLROnPlateau(factor=0.2,patience=7)
 early_stop=keras.callbacks.EarlyStopping(monitor='val_loss',
                                         patience=patience,
                                         verbose=0, mode='auto')
-csv_log = keras.callbacks.CSVLogger(args.save_path+'.csv')
 model_checkpoint = keras.callbacks.ModelCheckpoint(args.save_path+'.hdf5',
                                                    save_best_only=True)
-lr_plateau = keras.callbacks.ReduceLROnPlateau(factor=0.2,patience=7)
-
 model.fit(x=train_encodings,y=train_powers,
           validation_data=(test_encodings,test_powers),
           batch_size=batch_size,
           epochs=epochs,
         verbose=1,
         callbacks=[early_stop,model_checkpoint,csv_log,lr_plateau],)
+
+###NAN Finding
+#csv_log = keras.callbacks.CSVLogger(args.save_path+'.csv')
+#model_checkpoint = keras.callbacks.ModelCheckpoint(args.save_path+'.hdf5',
+#                                                   save_best_only=True,
+#                                                   monitor='loss')
+#
+#model.fit_generator(train_seq,steps_per_epoch=1,
+#          epochs=epochs,
+#        verbose=1,
+#        callbacks=[model_checkpoint,csv_log],)
 
 
 
