@@ -19,6 +19,8 @@ class DMLL_tfp(OutputProcessor):
                  scale_scale=0.1,
                  low=0.,high=2**16 - 1.,
                  log_scale_min=-7.0,log_scale_max=8.0,
+                 means_min=None,means_max=None,
+                 quantize=True,
                  **kwargs):
         super(DMLL_tfp,self).__init__(**kwargs)
         self.num_classes = num_classes
@@ -30,6 +32,9 @@ class DMLL_tfp(OutputProcessor):
         self.scale_scale = scale_scale
         self.log_scale_min = log_scale_min
         self.log_scale_max = log_scale_max
+        self.means_min = means_min
+        self.means_max = means_max
+        self.quantize=quantize
         self.sess = K.get_session()
         
     def loss(self,y_true,y_pred,fix_y_true=True):
@@ -48,13 +53,14 @@ class DMLL_tfp(OutputProcessor):
 #            y_true = K.minimum(K.maximum(y_true,self.low),self.high)
 
             ones = tf.ones_like(y_true)
-            y_true = tf.where(y_true < self.low, 
-                        self.low * ones, 
-                        y_true)
-    
-            y_true = tf.where(y_true >self.high,
-                                    self.high * ones,
-                                    y_true) 
+            if self.low is not None:
+                y_true = tf.where(y_true < self.low, 
+                            self.low * ones, 
+                            y_true)
+            if self.high is not None:
+                y_true = tf.where(y_true >self.high,
+                                        self.high * ones,
+                                        y_true) 
         
         neg_log_likelihood = -K.sum(self.dist.log_prob(y_true),axis=-1)
         return neg_log_likelihood
@@ -75,21 +81,32 @@ class DMLL_tfp(OutputProcessor):
         scale_params = model_output[...,2*self.num_classes:] #should be log scales
         
         means = means*self.mean_scale
-        means = K.minimum(K.maximum(means,self.low),self.high)
-        log_scales = K.minimum(K.maximum(scale_params* self.scale_scale,
-                                         self.log_scale_min),
-                            self.log_scale_max)
+        if self.means_min is not None:
+            means = K.maximum(means,self.means_min)
+        if self.means_max is not None:
+            means = K.minimum(means,self.means_max)
+        
+        log_scales = scale_params* self.scale_scale
+        if self.log_scale_min is not None:
+            log_scales = K.maximum(log_scales,self.log_scale_min)
+        if self.log_scale_max is not None:
+            log_scales = K.minimum(log_scales,self.log_scale_max)
         scales = K.exp(log_scales) 
-
-        discretized_logistic_dist = tfd.QuantizedDistribution(
-                distribution=tfd.TransformedDistribution(
+        
+        base_dist = tfd.TransformedDistribution(
                     distribution=tfd.Logistic(loc=means, scale=scales),
-                    bijector=tfb.AffineScalar(shift=-0.5)),
-                low=self.low,
-                high=self.high)
+                    bijector=tfb.AffineScalar(shift=-0.5))
+        if self.quantize:
+            comp_dist = tfd.QuantizedDistribution(
+                    distribution=base_dist,
+                    low=self.low,
+                    high=self.high)
+        else:
+            comp_dist = base_dist
+            
         self.dist = tfd.MixtureSameFamily(
                 mixture_distribution=tfd.Categorical(logits=logit_probs),
-                components_distribution=discretized_logistic_dist)
+                components_distribution=comp_dist)
         self.sample_op = self.dist.sample()
         self.built=True
         

@@ -1,12 +1,10 @@
+
 import argparse
-import keras
-import keras.backend as K
-from scipy.io.wavfile import read
 from keras_wavenet.utils.wavenet_utils import (simple_load_wavfile,
                                            sample_to_categorical,
                                            categorical_to_sample)
 from keras_wavenet.layers.wavenet import custom_objs
-from keras.models import load_model
+from keras_wavenet.utils.queued_wavenet_utils import load_model
 from keras_wavenet.utils.wavenet_utils import inv_mu_law_numpy
 from keras_wavenet.utils.audio_generator_utils import WavGenerator
 from keras_wavenet.models.audio_outputs import get_output_processor
@@ -21,9 +19,6 @@ fs = os.path.sep
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', dest='model',
-                action='store', required=True,
-                help='path to the model hdf5')
 parser.add_argument('--folder', dest='folder',
                 action='store',default=None,
                 help='path to the wavfile to encode')
@@ -33,7 +28,9 @@ parser.add_argument('--output_folder', dest='output_folder',
 parser.add_argument('--config_json', dest='config_json',
                 action='store',default=None,
                 help='path to the config json')
-
+parser.add_argument('--num_timesteps', dest='num_timesteps',
+                action='store',default=None,type=int,
+                help='number of timesteps to generate,must be a multiple of the encoding_len')
 
 args = parser.parse_args()
 output_folder = args.output_folder if args.output_folder.endswith(fs) else args.output_folder+fs
@@ -47,7 +44,12 @@ preprocess_func_str = config_json['model_dict']['preprocess_func_str']
 used_mu_law = config_json['generator_dict']['mu_law']
 output_processor = config_json['model_dict']['output_processor']
 output_processor_kwargs = config_json['model_dict']['output_processor_kwargs']
-
+if args.num_timesteps is None:
+    num_timesteps = config_json['generator_dict']['expected_len']
+else:
+    num_timesteps = args.num_timesteps
+    config_json['generator_dict']['expected_len'] = num_timesteps
+    config_json['generator_dict']['target_size'] = [num_timesteps,1]
 
 batch_size = 8
 
@@ -59,22 +61,7 @@ train_gen = generator.flow_from_directory(args.folder,
                                               batch_size=batch_size,
                                               )
 test_x,test_y,filenames = train_gen.next(return_filenames=True)
-
-
-
-#need to handle stochastic encoding
-model = load_model(args.model,compile=False,
-                     custom_objects=custom_objs)
-
-
-output_channels = model.output_shape[-1]
-dist = get_output_processor(output_processor,num_output_channels=output_channels,
-                            processor_kwargs=output_processor_kwargs)
-sampler = dist.sample
-model_out = model.predict(test_x)
-full_audio = sampler(model_out,model)
-
 if used_mu_law:
-    full_audio = inv_mu_law_numpy(full_audio)
-for idx,waveform in enumerate(full_audio):
+    test_x = inv_mu_law_numpy(test_x)
+for idx,waveform in enumerate(test_x):
     librosa.output.write_wav(output_folder+'test_'+str(idx)+'.wav',waveform,sr=sample_rate)

@@ -22,6 +22,8 @@ For original Wavenet:
  * scipy
  * librosa
 
+ The original Wavenet implementation outputs a sparse categorical distribution, which can be trained with any keras backend. The discretized mixture of logistics distribution requires tensorflow_probability
+
 In addition to the above, for Fast/Queued Wavenet:
  * tensorflow
 
@@ -35,4 +37,6 @@ Hopefully I've organized the code well enough to make it simple to modify. The b
  * keras_wavenet/layers/wavenet provides specific keras layers used in the Wavenet model.
  * keras_wavenet/model/wavenet provides some of the larger structures used in the wavenet model. For example, res_block builds the residual block core of the wavenet model. It's these functions/structures which you will want to look at/modify if you want to create a wavenet-like model for a different domain.
 
-Once you have a trained wavenet, you can generate samples from it using the Fast/Queued Wavenet algorithm. Use the run_wavenet.py script
+Once you have a trained wavenet, you can generate samples from it using the Fast/Queued Wavenet algorithm. Use the run_wavenet.py script.
+
+If you have a trained wavenet, you can also use it to train a parallel wavenet using build_parallel_wavenet.py.

@@ -78,13 +78,21 @@ parser.add_argument('--output_folder', dest='output_folder',
 parser.add_argument('--config_json', dest='config_json',
                 action='store',default=None,
                 help='path to the config json')
+parser.add_argument('--num_timesteps', dest='num_timesteps',
+                action='store',default=None,type=int,
+                help='number of timesteps to generate,must be a multiple of the encoding_len')
 args = parser.parse_args()
 output_folder = args.output_folder if args.output_folder.endswith(fs) else args.output_folder+fs
 os.makedirs(output_folder,exist_ok=True)
 
 config_json = json.load(open(args.config_json,'r'))
 sample_rate = config_json['generator_dict']['load_kwargs']['sample_rate']
-num_timesteps = config_json['generator_dict']['expected_len']
+if args.num_timesteps is None:
+    num_timesteps = config_json['generator_dict']['expected_len']
+else:
+    num_timesteps = args.num_timesteps
+    config_json['generator_dict']['expected_len'] = num_timesteps
+    config_json['generator_dict']['target_size'] = [num_timesteps,1]
 encoding_size = config_json['model_dict']['latent_size']
 preprocess_func_str = config_json['model_dict']['preprocess_func_str']
 used_mu_law = config_json['generator_dict']['mu_law']
@@ -101,7 +109,10 @@ train_gen = generator.flow_from_directory(args.folder,
                                               )
 test_x,test_y,filenames = train_gen.next(return_filenames=True)
 #need to handle stochastic encoding
-encoder = load_model(args.model,queued=False,new_outputs=['z_mean'],
+encoder = load_model(args.model,queued=False,
+                     new_inputs=['input_1'],
+                     batch_input_shapes=[(None,num_timesteps,1)],
+                     new_outputs=['z_mean'],
                      custom_objects=custom_objs)
 
 encoding_1 = encoder.predict(test_x)

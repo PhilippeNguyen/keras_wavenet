@@ -129,14 +129,13 @@ args = parser.parse_args()
 '''
 generator_dict = get_default_args(WavGenerator)
 model_dict = get_default_args(build_model)
+train_dict = {'batch_size':8,'patience':10,'epochs':250}
 if args.config_json is not None:
     config_json = json.load(open(args.config_json,'r'))
     generator_dict.update(config_json['generator_dict'])
     model_dict.update(config_json['model_dict'])
-    
-batch_size = 8
-patience = 10
-epochs = 250
+    train_dict.update(config_json['train_dict'])
+
 
 all_dict = {'generator_dict':generator_dict,'model_dict':model_dict}
 json.dump(all_dict,open(args.save_path+'_options.json','w'),indent=4)
@@ -153,11 +152,11 @@ print('loading data')
 train_gen = train_generator.flow_from_directory(args.train_folder,
                                               shuffle=True,
                                               follow_links=True,
-                                              batch_size=batch_size)
+                                              batch_size=train_dict['batch_size'])
 valid_gen = test_generator.flow_from_directory(args.valid_folder,
                                           shuffle=True,
                                           follow_links=True,
-                                          batch_size=batch_size)
+                                          batch_size=train_dict['batch_size'])
 
 test_x,test_y,filenames = train_gen.next(return_filenames=True)
 #sys.exit()
@@ -165,10 +164,10 @@ train_gen.reset()
 input_shape = np.shape(test_x)[1:]
 
 num_train_samples =  train_gen.samples
-num_train_steps_per_epoch = np.ceil(num_train_samples/batch_size)
+num_train_steps_per_epoch = np.ceil(num_train_samples/train_dict['batch_size'])
 
 num_valid_samples =  valid_gen.samples
-num_valid_steps_per_epoch = np.ceil(num_valid_samples/batch_size)
+num_valid_steps_per_epoch = np.ceil(num_valid_samples/train_dict['batch_size'])
 
 #Model set up
 
@@ -185,7 +184,7 @@ model.compile(optimizer=AdamWithWeightnorm(),
 #sys.exit()
 
 early_stop=keras.callbacks.EarlyStopping(monitor='val_loss',
-                                        patience=patience,
+                                        patience=train_dict['patience'],
                                         verbose=0, mode='auto')
 csv_log = keras.callbacks.CSVLogger(args.save_path+'.csv')
 model_checkpoint = keras.callbacks.ModelCheckpoint(args.save_path+'.hdf5',
@@ -195,7 +194,7 @@ model.fit_generator(train_gen,
                     steps_per_epoch=num_train_steps_per_epoch,
                     validation_data=valid_gen,
                     validation_steps=num_valid_steps_per_epoch,
-                    epochs=epochs,
+                    epochs=train_dict['epochs'],
                     verbose=1,
                     callbacks=[early_stop,model_checkpoint,csv_log,lr_plateu],
 

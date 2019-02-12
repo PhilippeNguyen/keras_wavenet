@@ -47,35 +47,6 @@ def batch_model_reset_states(model):
     sess.run(all_dequeues)
     sess.run(all_inits)
     
-#def synthesize(model,encoding,num_timesteps,mode='no_transform',
-#               init_state=None,verbose=False):
-#        
-##    model.reset_states() #will also reset other states
-#    batch_model_reset_states(model)
-#
-#    num_ch = 1
-#    num_batch,encoding_len,_ = encoding.shape
-#    full_audio = np.zeros((num_batch,num_timesteps,num_ch),dtype=np.float32)
-#    
-#    encoding_hop = num_timesteps // encoding_len
-#    if init_state is None:
-#        y = np.zeros((num_batch,1,num_ch),dtype=np.float32)
-#    else:
-#        y = init_state
-#    for idx in range(num_timesteps):
-#        if idx % 100 == 0 and verbose:
-#            sys.stdout.write("\r "+str(idx)+" / " +str(num_timesteps))
-#            sys.stdout.flush()
-#
-#        enc_idx = idx // encoding_hop
-#        enc = np.expand_dims(encoding[:,enc_idx,:],axis=1)
-#        model_out = model.predict([enc,y])
-#
-#        model_out = model_output_transform(model_out,mode)-128
-#        y = model_out / 128.
-#        full_audio[:,idx,:] = inv_mu_law_numpy(model_out[:,0,:])
-#        
-#    return full_audio
 
 def load_model(filepath,queued,batch_size=1,custom_objects=None,
                new_inputs=None,new_outputs=None,batch_input_shapes=None):

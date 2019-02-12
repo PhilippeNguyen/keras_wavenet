@@ -27,6 +27,15 @@ parser.add_argument('--output_file', dest='output_file',
 parser.add_argument('--config_json', dest='config_json',
                 action='store',default=None,
                 help='path to the config json')
+parser.add_argument('--frame_length', dest='frame_length',
+                action='store',default=1024,type=int,
+                help='frame_length for the stft')
+parser.add_argument('--frame_step', dest='frame_step',
+                action='store',default=256,type=int,
+                help='frame_step for the stft')
+parser.add_argument('--num_samples', dest='num_samples',
+                action='store',default=None,type=int,
+                help='number of samples to use (if None, uses pulls 1 sample per wav file')
 args = parser.parse_args()
 output = args.output_file if args.output_file.endswith('.npz') else args.output_file+'.npz'
 
@@ -73,16 +82,24 @@ if used_mu_law:
     stft_scale = 128
 else:
     stft_scale = 1
-print('stft_scale: ',stft_scale)
+frame_length=np.int32(args.frame_length)
+frame_step=np.int32(args.frame_step)
+print('stft_scale: ',stft_scale,', frame_length: ',frame_length,
+      ', frame_step: ',frame_step)
+
 stft_fn = tf.contrib.signal.stft(tf_in[...,0]/stft_scale,
-                                 frame_length=1024,
-                                 frame_step=256)
+                                 frame_length=frame_length,
+                                 frame_step=frame_step)
 avg_pow_fn = tf.reduce_mean(tf.pow(tf.abs(stft_fn),2),axis=1)
 
-
-samples_remaining = train_gen.samples
+num_samples = args.num_samples
+if args.num_samples is None:
+    num_samples = train_gen.samples
+else:
+    num_samples = args.num_samples
+samples_remaining = num_samples
 while samples_remaining > 0:
-    sys.stdout.write("\r {}".format(train_gen.samples-samples_remaining))
+    sys.stdout.write("\r {}".format(num_samples-samples_remaining))
     sys.stdout.flush()
     test_x,test_y, = train_gen.next()
     encodings = encoder.predict(test_x)
@@ -96,4 +113,5 @@ while samples_remaining > 0:
 
 encodings = np.concatenate(encoding_list)
 powers = np.concatenate(powers_list)
-np.savez(output,encodings=encodings,powers=powers,stft_scale=stft_scale)
+np.savez(output,encodings=encodings,powers=powers,
+         stft_scale=stft_scale,frame_length=frame_length,frame_step=frame_step)
