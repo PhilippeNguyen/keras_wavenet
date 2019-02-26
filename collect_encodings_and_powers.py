@@ -51,7 +51,6 @@ output_processor_kwargs = config_json['model_dict']['output_processor_kwargs']
 batch_size = 32
 
 generator = WavGenerator(**config_json['generator_dict'])
-generator.random_transforms = False
 train_gen = generator.flow_from_directory(args.folder,
                                               shuffle=True,
                                               follow_links=True,

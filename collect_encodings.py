@@ -24,6 +24,10 @@ parser.add_argument('--output_file', dest='output_file',
 parser.add_argument('--config_json', dest='config_json',
                 action='store',default=None,
                 help='path to the config json')
+parser.add_argument('--num_timesteps', dest='num_timesteps',
+                action='store',default=None,type=int,
+                help='number of timesteps to generate,must be a multiple of the encoding_len')
+
 args = parser.parse_args()
 output = args.output_file if args.output_file.endswith('.npy') else args.output_file+'.npy'
 
