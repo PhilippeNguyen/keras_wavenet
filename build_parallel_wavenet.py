@@ -8,7 +8,7 @@ from keras_wavenet.utils.audio_generator_utils import WavGenerator
 import numpy as np
 from keras.optimizers import Adam
 from keras_wavenet.weightnorm import AdamWithWeightnorm
-from keras_wavenet.models.parallel_wavenet import wavenet_iaf_step
+from keras_wavenet.models.parallel_wavenet import wavenet_noskip_iaf_step
 from keras_wavenet.layers.wavenet import custom_objs
 import keras.backend as K
 from keras.models import load_model
@@ -75,7 +75,7 @@ def get_default_args(func):
 def build_parallel_wavenet(signal_shape,encoding_shape,
                            teacher_path,teacher_processor,teacher_processor_kwargs,
                            stft_scale,
-                           width=64,skip_width=64,out_width=64,
+                           width=64,out_width=64,
                            layer_list=None,num_stages=10,
                            teacher_preprocess_func_str=None,
                            num_student_samples=200,
@@ -113,8 +113,8 @@ def build_parallel_wavenet(signal_shape,encoding_shape,
     scale_total= 1
     log_scale_total = 0
     for flow_idx,layers in enumerate(layer_list):
-        x,shift,scale,log_scale = wavenet_iaf_step(x,encoding_input,
-                                            width,skip_width,out_width,
+        x,shift,scale,log_scale = wavenet_noskip_iaf_step(x,encoding_input,
+                                            width,out_width,
                                             num_layers=layer_list[flow_idx],
                                             num_stages=num_stages,
                                             log_scale_min=log_scale_min,

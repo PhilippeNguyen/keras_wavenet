@@ -58,6 +58,44 @@ def res_block(sig,width,filt_len,dilation,base_name,
     out_res = Add()([sig,last_conv])
     return out_res,skip
 
+def noskip_block(sig,width,filt_len,dilation,base_name,
+              encoding=None,):
+    '''Encompasses the core building block of the wavenet model, see figure 4 
+    of the wavenet paper (https://arxiv.org/pdf/1609.03499.pdf)
+    
+        Args:
+            sig: tensor, signal tensor,
+            width: int, number of filters/units used in conv operations
+            filter_len: int, length of the conv operatations
+            dilation: int, dilation rate used in conv
+            base_name: name for the keras layers/tensors
+            encoding: tensor, encoding tensor,
+    '''
+    
+    
+    filt_sig = Conv1D(filters=2*width,
+               kernel_size=filt_len,
+               dilation_rate=dilation,
+               padding='causal',
+               name=base_name+"_sigconv_1")(sig)
+    
+    if encoding is not None:
+        enc_wide = Conv1D(filters=2*width,
+                   kernel_size=filt_len,
+                   dilation_rate=dilation,
+                   padding='causal',
+                   name=base_name+"_encconv_1")(encoding)
+        filt_sig = AddEncoder()([filt_sig,enc_wide])
+        
+    filt_sig = WavenetActivation()(filt_sig)
+    
+    last_conv = Conv1D(filters=width,kernel_size=1,
+                      name=base_name+"_lastconv",
+                      padding='causal')(filt_sig) #technically causal padding doesnt matter here
+            
+    out_res = Add()([sig,last_conv])
+    return out_res
+
 ##############
 ### Models ###
 ##############
@@ -156,4 +194,66 @@ def build_wavenet_decoder(signal,encoding,
     decoder_out = Activation(final_activation,name=
                          base_name+'decoder_out')(skip_out)
     return decoder_out
+
+
+def build_noskip_wavenet_decoder(signal,encoding,
+                          width,out_width,
+                          num_layers,num_stages,
+                          filt_len=3,final_conditioning=False,
+                          final_activation='softmax',
+                          base_name=""):
+    '''
+        Args:
+            encoding: tensor input, shape (num_batches,num_encoding_timesteps,num_channels)
+            signal: tensor, should be the same as the encoding model input, shape (num_batches,num_timesteps,num_channels)
+            width: int, number of filters/units used in the main channel
+            skip_width: int, number of filters/units used in the skip output 
+            out_width: int, number of filters/units for the final output of the decoder
+            filter_len: int, length of the conv operatations
+            num_layers: int, number of conv stages, each one doubles the dilation rate
+            num_stages: int, after every num_stages, reset the dilation rate,
+            final_conditioning: bool, if true conditions the output of the res blocks
+            final_activation : str, name of the final activation function
+    '''
+    
+    sig_shift = TemporalShift(shift=1,name=base_name+'temporal_shift')(signal)
+    _,sig_len,_ = signal._keras_shape
+    
+    sig = Conv1D(filters=width,
+                   kernel_size=filt_len,
+                   padding='causal',
+                   name=base_name+"convstart")(sig_shift)
+
+    for idx in range(num_layers):
+        dilation = 2**(idx % num_stages)
+        sig = noskip_block(sig,width,filt_len,dilation=dilation,
+                                 base_name=base_name+'noskip_block'+str(idx)+'_dil'+str(dilation),
+                                 encoding=encoding,
+                                 )
+
+
+    if final_conditioning:
+        sig_conv = Conv1D(filters=width,
+               kernel_size=1,
+               padding='causal',
+               name=base_name+"sig_conv")(sig)
+        conv_encoding = Conv1D(filters=width,
+                       kernel_size=1,
+                       padding='causal',
+                       name=base_name+"conv_encoding")(encoding)
+        sig_conditioned = AddEncoder()([sig_conv,conv_encoding])
+        sig_conditioned = Activation('relu')(sig_conditioned)
+        sig_out = Conv1D(filters=out_width,
+                       kernel_size=1,
+                       padding='causal',
+                       name=base_name+"decoder_out_pre_act")(sig_conditioned)
+    else:
+        sig_out = Conv1D(filters=out_width,
+               kernel_size=1,
+               padding='causal',
+               name=base_name+"decoder_out_pre_act")(sig)
+    decoder_out = Activation(final_activation,name=
+                         base_name+'decoder_out')(sig_out)
+    return decoder_out
+
 
